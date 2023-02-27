@@ -18,6 +18,7 @@ print(square[1])
 #%%
 print(distance(square[0],square[3]))
 
+
 #%%
 pairs = zip(square, square[1:] + square[:1])
 print(pairs)
