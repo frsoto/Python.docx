@@ -1,0 +1,300 @@
+root@vm4e04p10:/home/operador# cat /etc/kea/kea-dhcp4.conf
+{ // START
+"Dhcp4":  // START Dhcp4
+{
+
+//Add names of your network interfaces to listen on
+"interfaces-config": { "interfaces": ["ens160","ens192" ],
+"dhcp-socket-type": "udp"  // Traffic is always relayed
+},
+
+
+// Control Channel (para recibir comandos de gestion)
+"control-socket": {
+    "socket-type": "unix",
+    "socket-name": "/tmp/kea-dhcp4-ctrl.sock"
+},
+
+
+// Lease-Database: defino donde guardar las leases
+"lease-database": {
+    "type": "memfile",
+    "lfc-interval": 3600
+},
+
+
+// Setup reclamation of the expired leases
+"expired-leases-processing": {
+    "reclaim-timer-wait-time": 10,
+    "flush-reclaimed-timer-wait-time": 25,
+    "hold-reclaimed-time": 3600,
+    "max-reclaim-leases": 100,
+    "max-reclaim-time": 250,
+    "unwarned-reclaim-cycles": 5
+},
+
+
+// Global Timers
+"renew-timer": 302400,
+"rebind-timer": 529200,
+"valid-lifetime": 604800,
+
+
+
+
+// PARAMETROS GLOBALES ADICIONALES
+   /* Many additional parameters can be specified here:
+   - option definitions (if you want to define vendor options, your own  custom options or perhaps 
+   handle standard options that Kea does not support out of the box yet)
+   - client classes   */
+
+   //The scope hierarchy is:
+     // - global (most generic, can be overwritten by class, subnet or host)
+     // - class (can be overwritten by subnet or host)
+     // - subnet (can be overwritten by host)
+     // - host (most specific, overwrites any other scopes)
+
+
+    // Option-data-Globales: 
+    //  They are going to be sent when a clients request them, unless overwritten with values in more specific scopes
+    //  Puedo usar el "name" o user el "code" de la option 
+    //  Options that take integer values can either be specified in dec or hex format. Hex format could be either plain (e.g. abcd)
+    //  or prefixed with 0x (e.g. 0xabcd).*/
+   "option-data": [
+          { "name": "domain-name-servers", "data": "8.8.8.8, 9.9.9.9"},
+          { "code": 15, "data": "bbt.net.ar" } // para el Domain Search
+          ],
+
+
+    // Option Definitions
+    //  if you want to define vendor options, your own  custom options or perhaps
+    //  handle standard options that Kea does not support out of the box yet) */
+   "option-def": [
+          {
+            "array": false,
+            "code": 1,
+            "encapsulate": "",
+            "name": "DHCP-server-1",
+            "record-types": "",
+            "space": "PC-MTA",
+            "type": "ipv4-address"
+          },
+          {
+            "array": false,
+            "code": 6,
+            "encapsulate": "",
+            "name": "KERBEROS-realm",
+            "record-types": "",
+            "space": "PC-MTA",
+            "type": "string"
+          },
+          {
+            "array": false,
+            "code": 3,
+            "encapsulate": "",
+            "name": "provision-server",
+            "record-types": "",
+            "space": "PC-MTA",
+            "type": "string"
+          },
+          {
+            "array": false,
+            "code": 122,
+            "encapsulate": "PC-MTA",
+            "name": "PC-MTA",
+            "record-types": "",
+            "space": "dhcp4",
+            "type": "empty"
+          }
+        ],
+
+
+   // Client-Classes:
+   // If classes are defined, incoming packets  may be assigned to specific classes. 
+   // A client class can represent any  group of devices that share some common characteristic, 
+   // e.g. Windows devices, iphones, broken printers that require special options, etc.
+   // Based on the class information, you can then allow or reject clients to use certain subnets, 
+   // add special options for them or change values of some fixed fields.
+   "client-classes": [
+        {
+        "name": "Cablemodem",
+        "test": "substring(option[60].hex,0,6) == 'docsis'",
+        "next-server": "192.168.10.43",
+         "boot-file-name": "30M.bin"
+        },
+        {
+        "name": "cpe",
+        "test": "not ((substring(option[60].hex,0,4) == 'pktc') or substring(option[60].hex,0,6) == 'docsis')"
+         },
+        {
+        "name": "eMTA",
+        "test": "substring(option[60].hex,0,4) == 'pktc'",
+        "next-server": "192.168.10.43",
+        "boot-file-name": "emta.bin"
+         }
+        ],
+
+
+
+
+
+// SHARED NETWORKS & SUBNETS
+"shared-networks":  // CMTS1POP10: Bundle1 y Bundle2
+[ 
+
+  { // C M T S 1 P O P 1 0 - Bundle 1
+    "match-client-id": true,
+    "name": "CMTS1POP10-B1",
+    "option-data": //Para CMTS1POP10-B1
+     [
+        {"name": "time-offset","data": "-10800"}
+    
+     ],
+
+
+    "subnet4": // A B R O   S U B N E T S  !!!
+     [  
+    
+
+        { // **** SUBNET CableModem ****
+        "subnet": "10.40.0.0/19", //CM
+           "client-class": "Cablemodem",
+           "pools": [ { "pool": "10.40.0.10 - 10.40.0.255" } ],
+           "relay": { "ip-address": "10.40.0.1" },
+           "next-server": "192.168.10.43",
+
+           "option-data": [
+                {"name": "routers", "data": "10.40.0.1"},
+                {"name": "boot-file-name", "data": "30m.bin" }, //la clase Cablemoden ya tiene boof-file, pero esta sobre escribe
+                {"name": "tftp-server-name","data": "192.168.10.43"},
+                {"name": "time-servers","data": "192.168.10.43"},
+                {"name": "time-offset","data": "-10800"},
+                {"name": "domain-name-servers","data": "192.168.10.42"},
+                {"name": "log-servers","data": "192.168.10.43"}
+                ]
+        },
+
+        { // **** Subnet CPE *****
+        "subnet": "10.41.0.0/19", // CPE
+           "client-class": "cpe",
+           "pools": [ { "pool": "10.41.0.10 - 10.41.0.255" } ],
+           "relay": { "ip-address": "10.41.0.1" },
+           "renew-timer": 900,
+           "rebind-timer": 1800,
+           "valid-lifetime": 3600,
+
+           "option-data": [
+                {"name": "routers", "data": "10.41.0.1"},
+                {"name": "time-servers","data": "192.168.10.43"},
+                {"name": "domain-name-servers","data": "192.168.10.42"}
+                ]
+         },
+
+        { // *** Subnet eMTA ****
+        "subnet": "10.42.0.0/19", //eMTA
+           "client-class": "eMTA",
+           "pools": [ { "pool": "10.42.0.10 - 10.42.0.255" } ],
+           "relay": { "ip-address": "10.42.0.1" },
+           "next-server": "192.168.10.43",
+
+           "option-data": [
+                {"name": "routers", "data": "10.42.0.1"},
+                {"name": "time-servers","data": "192.168.10.43"},
+                {"name": "domain-name-servers","data": "192.168.10.42"},
+                {"name": "tftp-server-name","data": "192.168.10.43"},
+                {"name": "log-servers","data": "192.168.10.43"}
+                ]
+        }  //Ultima
+
+
+    ] // Ultima -  C I E R R O   S U B N E T S !!!
+
+    }, // continua
+
+
+
+  {   // C M T S 1 P O P 1 0 - Bundle 2
+    "match-client-id": true,
+    "name": "CMTS1POP10-B2",
+    "option-data":
+     [
+        {"name": "time-offset","data": "-10800"}
+
+     ],
+
+
+    "subnet4": // A B R O   S U B N E T S  !!!
+     [  
+    
+
+        { // **** Subnet CM ****
+        "subnet": "10.40.32.0/19", //
+           "client-class": "Cablemodem",
+           "pools": [ { "pool": "10.40.32.10 - 10.40.32.255" } ],
+           "relay": { "ip-address": "10.40.32.1" },
+           "next-server": "192.168.10.43",
+
+           "option-data": [
+                {"name": "routers", "data": "10.40.32.1"},
+                {"name": "boot-file-name", "data": "30m.bin" }, //la clase Cablemoden ya tiene boof-file, pero esta sobre escribe
+                {"name": "tftp-server-name","data": "192.168.10.43"},
+                {"name": "time-servers","data": "192.168.10.43"},
+                {"name": "time-offset","data": "-10800"},
+                {"name": "domain-name-servers","data": "192.168.10.42"},
+                {"name": "log-servers","data": "192.168.10.43"}
+                ]
+        },
+
+        { // **** Subnet CPE ****
+        "subnet": "10.41.32.0/19",
+           "client-class": "cpe",
+           "pools": [ { "pool": "10.41.32.10 - 10.41.32.255" } ],
+           "relay": { "ip-address": "10.41.32.1" },
+           "renew-timer": 900,
+           "rebind-timer": 1800,
+           "valid-lifetime": 3600,
+
+           "option-data": [
+                {"name": "routers", "data": "10.41.32.1"},
+                {"name": "time-servers","data": "192.168.10.43"},
+                {"name": "domain-name-servers","data": "192.168.10.42"}
+                ]
+         },
+
+        { // *** Subnet eMTA ****
+        "subnet": "10.42.32.0/19",
+           "client-class": "eMTA",
+           "pools": [ { "pool": "10.42.32.10 - 10.42.32.255" } ],
+           "relay": { "ip-address": "10.42.32.1" },
+           "next-server": "192.168.10.43",
+
+           "option-data": [
+                {"name": "routers", "data": "10.42.32.1"},
+                {"name": "time-servers","data": "192.168.10.43"},
+                {"name": "domain-name-servers","data": "192.168.10.42"},
+                {"name": "tftp-server-name","data": "192.168.10.43"},
+                {"name": "log-servers","data": "192.168.10.43"}
+                ]
+        }  //Ultima
+
+
+    ] // Ultima -  C I E R R O   S U B N E T S !!!
+
+    } // fin
+
+
+], // CIERRO SHARED
+
+
+
+
+"loggers": [{
+     "name": "kea-dhcp4",
+     "output_options": [{"output": "/var/log/kea/kea-dhcp4.log" }],
+     "severity": "INFO",
+     "debuglevel": 0    }]
+
+
+} // FIN "dhcp4"
+} // FIN TOTAL
+root@vm4e04p10:/home/operador# 
